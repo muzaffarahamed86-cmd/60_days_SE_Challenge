@@ -1,7 +1,21 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.express as px
+import sys
+import subprocess
+
+# Try to ensure plotly is available at runtime; if not, attempt to install it.
+try:
+    import plotly.express as px
+except Exception:
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "plotly"])
+        import importlib
+        importlib.invalidate_caches()
+        import plotly.express as px
+    except Exception:
+        px = None
+
 import openai
 
 # --------------------------
@@ -15,10 +29,17 @@ st.write("Upload your CSV file and let AI analyze it automatically.")
 # SIDEBAR CONFIG
 # --------------------------
 st.sidebar.header("⚙️ Configuration")
-openai_api_key = st.sidebar.text_input("Enter OpenAI API Key (Optional)", type="password")
+
+# OpenAI API key (optional) and other settings
+openai_api_key = st.sidebar.text_input("OpenAI API Key", type="password")
+st.sidebar.caption("Provide an OpenAI key to enable AI insights and explanations.")
+
+# Ensure plotly was imported/installed successfully before proceeding to visualizations.
+if 'px' not in globals() or px is None:
+    st.sidebar.error("Plotly is required for visualizations; install it with `pip install plotly` and reload the app.")
 
 # --------------------------
-# FILE UPLOAD
+# DATA PREVIEW
 # --------------------------
 uploaded_file = st.file_uploader("📂 Upload a CSV file", type=["csv"])
 
@@ -28,9 +49,9 @@ if uploaded_file:
     except Exception as e:
         st.error(f"Error reading file: {e}")
         st.stop()
-    
+
     st.success("✅ File uploaded successfully!")
-    
+
     # --------------------------
     # DATA PREVIEW
     # --------------------------
@@ -49,7 +70,7 @@ if uploaded_file:
     with col2:
         st.write("**Missing Values:**")
         st.dataframe(pd.DataFrame(df.isnull().sum(), columns=["Missing Count"]))
-    
+
     # --------------------------
     # NUMERIC SUMMARY
     # --------------------------
@@ -61,13 +82,16 @@ if uploaded_file:
     # --------------------------
     numeric_df = df.select_dtypes(include=[np.number])
     if not numeric_df.empty:
-        st.subheader("🧮 Correlation Heatmap")
-        corr = numeric_df.corr()
-        fig_corr = px.imshow(
-            corr, text_auto=True, aspect="auto",
-            title="Correlation Matrix", color_continuous_scale="RdBu_r"
-        )
-        st.plotly_chart(fig_corr, use_container_width=True)
+        if 'px' in globals() and px is not None:
+            st.subheader("🧮 Correlation Heatmap")
+            corr = numeric_df.corr()
+            fig_corr = px.imshow(
+                corr, text_auto=True, aspect="auto",
+                title="Correlation Matrix", color_continuous_scale="RdBu_r"
+            )
+            st.plotly_chart(fig_corr, use_container_width=True)
+        else:
+            st.warning("Plotly not available — cannot render correlation heatmap.")
     else:
         st.warning("No numeric columns available for correlation heatmap.")
 
@@ -82,18 +106,22 @@ if uploaded_file:
 
     if st.button("Generate Chart"):
         try:
-            if chart_type == "Scatter":
-                fig = px.scatter(df, x=x_axis, y=y_axis, color=x_axis, title=f"{y_axis} vs {x_axis}")
-            elif chart_type == "Bar":
-                fig = px.bar(df, x=x_axis, y=y_axis, title=f"{y_axis} by {x_axis}")
-            elif chart_type == "Box":
-                fig = px.box(df, x=x_axis, y=y_axis, title=f"Distribution of {y_axis} by {x_axis}")
-            elif chart_type == "Histogram":
-                fig = px.histogram(df, x=x_axis, title=f"Histogram of {x_axis}")
-            st.plotly_chart(fig, use_container_width=True)
+            if 'px' not in globals() or px is None:
+                st.error("Plotly is required for charting. Install `plotly` and reload the app.")
+            else:
+                if chart_type == "Scatter":
+                    fig = px.scatter(df, x=x_axis, y=y_axis, color=x_axis, title=f"{y_axis} vs {x_axis}")
+                elif chart_type == "Bar":
+                    fig = px.bar(df, x=x_axis, y=y_axis, title=f"{y_axis} by {x_axis}")
+                elif chart_type == "Box":
+                    fig = px.box(df, x=x_axis, y=y_axis, title=f"Distribution of {y_axis} by {x_axis}")
+                elif chart_type == "Histogram":
+                    fig = px.histogram(df, x=x_axis, title=f"Histogram of {x_axis}")
+                st.plotly_chart(fig, use_container_width=True)
         except Exception as e:
             st.error(f"Error generating chart: {e}")
-        # --------------------------
+
+    # --------------------------
     # AUTO CHART GENERATOR
     # --------------------------
     st.subheader("🤖 Auto Chart Generator (AI decides best chart)")
@@ -104,37 +132,39 @@ if uploaded_file:
             categorical_cols = df.select_dtypes(exclude=np.number).columns.tolist()
 
             # Basic logic to decide chart type
-            chart_type = None
+            chart_type_choice = None
             x_col, y_col = None, None
 
             if len(numeric_cols) == 1 and len(categorical_cols) == 0:
-                chart_type = "Histogram"
+                chart_type_choice = "Histogram"
                 x_col = numeric_cols[0]
             elif len(numeric_cols) >= 2:
-                chart_type = "Scatter"
+                chart_type_choice = "Scatter"
                 x_col, y_col = numeric_cols[:2]
             elif len(numeric_cols) >= 1 and len(categorical_cols) >= 1:
-                chart_type = "Bar"
+                chart_type_choice = "Bar"
                 x_col, y_col = categorical_cols[0], numeric_cols[0]
             elif len(categorical_cols) >= 1:
-                chart_type = "Pie"
+                chart_type_choice = "Pie"
                 x_col = categorical_cols[0]
             else:
                 st.warning("Not enough data variety for auto charting.")
-                chart_type = None
 
-            if chart_type == "Histogram":
-                fig = px.histogram(df, x=x_col, title=f"📊 Auto: Histogram of {x_col}")
-            elif chart_type == "Scatter":
-                fig = px.scatter(df, x=x_col, y=y_col, title=f"📈 Auto: {y_col} vs {x_col}")
-            elif chart_type == "Bar":
-                fig = px.bar(df, x=x_col, y=y_col, title=f"📊 Auto: {y_col} by {x_col}")
-            elif chart_type == "Pie":
-                pie_counts = df[x_col].value_counts().reset_index()
-                pie_counts.columns = [x_col, "count"]
-                fig = px.pie(pie_counts, names=x_col, values="count", title=f"🥧 Auto: Distribution of {x_col}")
-            else:
-                fig = None
+            fig = None
+            if chart_type_choice == "Histogram":
+                if 'px' in globals() and px is not None:
+                    fig = px.histogram(df, x=x_col, title=f"📊 Auto: Histogram of {x_col}")
+            elif chart_type_choice == "Scatter":
+                if 'px' in globals() and px is not None:
+                    fig = px.scatter(df, x=x_col, y=y_col, title=f"📈 Auto: {y_col} vs {x_col}")
+            elif chart_type_choice == "Bar":
+                if 'px' in globals() and px is not None:
+                    fig = px.bar(df, x=x_col, y=y_col, title=f"📊 Auto: {y_col} by {x_col}")
+            elif chart_type_choice == "Pie":
+                if 'px' in globals() and px is not None:
+                    pie_counts = df[x_col].value_counts().reset_index()
+                    pie_counts.columns = [x_col, "count"]
+                    fig = px.pie(pie_counts, names=x_col, values="count", title=f"🥧 Auto: Distribution of {x_col}")
 
             if fig:
                 st.plotly_chart(fig, use_container_width=True)
@@ -143,12 +173,12 @@ if uploaded_file:
                 if openai_api_key:
                     openai.api_key = openai_api_key
                     prompt = f"""
-                    You are a data visualization expert.
-                    The dataset columns are: {list(df.columns)}.
-                    The chosen chart type is: {chart_type}.
-                    Explain briefly why this chart type is appropriate
-                    and what kind of insight a user might get from it.
-                    """
+You are a data visualization expert.
+The dataset columns are: {list(df.columns)}.
+The chosen chart type is: {chart_type_choice}.
+Explain briefly why this chart type is appropriate
+and what kind of insight a user might get from it.
+"""
 
                     with st.spinner("🤖 AI explaining chart choice..."):
                         try:
@@ -166,7 +196,7 @@ if uploaded_file:
                         except Exception as e:
                             st.warning(f"AI explanation failed: {e}")
                 else:
-                    st.caption("💡 Add your OpenAI key to get AI explanations for chart selection.")
+                    st.caption("💡 Add your OpenAI key in the sidebar to get AI explanations for chart selection.")
 
         except Exception as e:
             st.error(f"Error in Auto Chart Generator: {e}")
@@ -183,16 +213,16 @@ if uploaded_file:
 
         sample_data = df.head(20).to_csv(index=False)
         prompt = f"""
-        You are a data analyst. Analyze the following CSV data and give key insights in bullet points.
-        Focus on:
-        - Data quality issues
-        - Distribution observations
-        - Correlations or patterns
-        - Possible business insights
+You are a data analyst. Analyze the following CSV data and give key insights in bullet points.
+Focus on:
+- Data quality issues
+- Distribution observations
+- Correlations or patterns
+- Possible business insights
 
-        Data:
-        {sample_data}
-        """
+Data:
+{sample_data}
+"""
 
         if st.button("Generate AI Insights"):
             with st.spinner("Generating insights using OpenAI..."):
