@@ -1,0 +1,5 @@
+# Requirements for `unit_converter` package (keep minimal for now)
+# Add runtime dependencies here if you add external APIs or packaging.
+
+# Optional (for testing/development):
+# pytest
