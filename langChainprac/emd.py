@@ -6,7 +6,7 @@ embeded2 = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6
 
 emb = OpenAIEmbeddings(
     model="text-embedding-3-small",
-    api_key="YOUR_OPENAI_API_KEY"
+    api_key="YOUR_OPENAI_API_KEY"  # Replace with your actual API key or use environment variable
 )
 
 textembed = "This is one of the most wonderful generative AI Course."
